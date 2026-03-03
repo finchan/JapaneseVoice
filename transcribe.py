@@ -60,7 +60,7 @@ class Transcriber:
                     } for w in segment.words
                 ]
             }
-            print(f"[{line_data.start}-{line_data.end}]: {line_data.text}")
+            print(f"[{line_data['start']}-{line_data['end']}]: {line_data['text']}")
             results.append(line_data)
 
         self._save_json(results, output_path)

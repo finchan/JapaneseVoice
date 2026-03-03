@@ -1,6 +1,6 @@
 import json as python_json
 import uvicorn
-import httpx  # 确保已安装: pip install httpx
+import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
@@ -23,31 +23,31 @@ DATA_DIR = Path("data_cache")
 UPLOAD_DIR.mkdir(exist_ok=True)
 DATA_DIR.mkdir(exist_ok=True)
 
-
-@app.get("/translate")
-async def translate_word(keyword: str = Query(..., description="要查询的日语单词")):
-    # 清理关键词，去除换行和空格
+@app.get("/translate_mazii")
+async def translate_mazii(keyword: str = Query(...)):
     clean_keyword = keyword.strip().replace("\n", "").replace("\r", "")
-    if not clean_keyword:
-        return {"data": []}
+    url = "https://mazii.net/api/search"
 
-    # 有道词典接口：le=jap 代表日语，doctype=json 返回 JSON
-    youdao_url = f"https://dict.youdao.com/suggest?q={clean_keyword}&le=jap&doctype=json"
+    # Mazii API payload {dict: "jacn", type: "kanji", query: "暖かい", page: 1}
+    payload = {
+        "dict": "jatw",  # Japanese to jaen/jacn
+        "type": "word",
+        "query": clean_keyword,
+        "limit": 1
+    }
 
     async with httpx.AsyncClient() as client:
         try:
+            # Mazii often requires a custom User-Agent to allow the request
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }
-            response = await client.get(youdao_url, headers=headers, timeout=5.0)
-
-            if response.status_code != 200:
-                return JSONResponse(status_code=response.status_code, content={"error": "有道接口异常"})
-
+            response = await client.post(url, json=payload, headers=headers, timeout=5.0)
             data = response.json()
-            # 提取 entries 列表
-            result = data.get("data", {}).get("entries", [])
-            return {"data": result}
+
+            # Mazii returns 'data' as a list of words
+            return {"data": data.get("data", [])}
         except Exception as e:
             return JSONResponse(status_code=500, content={"error": str(e)})
 
