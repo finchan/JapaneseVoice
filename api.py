@@ -1,6 +1,7 @@
-import json
+import json as python_json
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
+import httpx  # 确保已安装: pip install httpx
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from transcribe import Transcriber
@@ -8,7 +9,6 @@ from pathlib import Path
 
 app = FastAPI(title="Japanese Transcription API", version="1.0.0")
 
-# 允许跨域
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,48 +16,59 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 初始化 Transcriber (建议放在 app 级别防止重复加载模型)
 transcriber = Transcriber(model_size="medium")
 
-# 定义存放音频和数据的目录
 UPLOAD_DIR = Path("uploads")
 DATA_DIR = Path("data_cache")
 UPLOAD_DIR.mkdir(exist_ok=True)
 DATA_DIR.mkdir(exist_ok=True)
 
 
+@app.get("/translate")
+async def translate_word(keyword: str = Query(..., description="要查询的日语单词")):
+    # 清理关键词，去除换行和空格
+    clean_keyword = keyword.strip().replace("\n", "").replace("\r", "")
+    if not clean_keyword:
+        return {"data": []}
+
+    # 有道词典接口：le=jap 代表日语，doctype=json 返回 JSON
+    youdao_url = f"https://dict.youdao.com/suggest?q={clean_keyword}&le=jap&doctype=json"
+
+    async with httpx.AsyncClient() as client:
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+            }
+            response = await client.get(youdao_url, headers=headers, timeout=5.0)
+
+            if response.status_code != 200:
+                return JSONResponse(status_code=response.status_code, content={"error": "有道接口异常"})
+
+            data = response.json()
+            # 提取 entries 列表
+            result = data.get("data", {}).get("entries", [])
+            return {"data": result}
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.post("/transcribe")
 async def handle_transcription(file: UploadFile = File(...)):
+    # ... 原有代码保持不变 ...
     try:
         audio_path = UPLOAD_DIR / file.filename
         json_path = DATA_DIR / f"{Path(file.filename).stem}.json"
-
-        # 1. 检查缓存
         if json_path.exists():
             data = Transcriber.load_data(str(json_path))
-            return JSONResponse(content={"data": data}) # 统一包装在 data 键下
-
-        # 2. 保存文件
+            return JSONResponse(content={"data": data})
         with open(audio_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
-
-        # 3. 执行识别 (现在的 data 是原始 List)
         raw_data = transcriber.transcribe(str(audio_path), str(json_path))
-
-        # 关键修复：处理 NumPy 序列化问题
-        # 强制将数据转为标准 Python 类型，防止 round() 后的 numpy.float 导致 500 错误
-        serializable_data = json.loads(json.dumps(raw_data, ensure_ascii=False))
-
+        serializable_data = python_json.loads(python_json.dumps(raw_data, ensure_ascii=False))
         return JSONResponse(content={"data": serializable_data})
-
     except Exception as e:
-        import traceback
-        traceback.print_exc() # 在控制台打印具体的报错栈，方便排查
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"处理失败: {str(e)}"}
-        )
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 if __name__ == "__main__":
