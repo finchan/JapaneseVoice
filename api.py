@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from transcribe import Transcriber
 from pathlib import Path
+import sqlite3
+import shutil
 
 app = FastAPI(title="Japanese Transcription API", version="1.0.0")
 
@@ -52,22 +54,6 @@ async def translate_mazii(keyword: str = Query(...)):
             return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-# @app.post("/transcribe")
-# async def handle_transcription(file: UploadFile = File(...)):
-#     try:
-#         audio_path = UPLOAD_DIR / file.filename
-#         json_path = DATA_DIR / f"{Path(file.filename).stem}.json"
-#         if json_path.exists():
-#             data = Transcriber.load_data(str(json_path))
-#             return JSONResponse(content={"data": data})
-#         with open(audio_path, "wb") as buffer:
-#             content = await file.read()
-#             buffer.write(content)
-#         raw_data = transcriber.transcribe(str(audio_path), str(json_path))
-#         serializable_data = python_json.loads(python_json.dumps(raw_data, ensure_ascii=False))
-#         return JSONResponse(content={"data": serializable_data})
-#     except Exception as e:
-#         return JSONResponse(status_code=500, content={"error": str(e)})
 @app.post("/transcribe")
 async def handle_transcription(
         file: UploadFile = File(...),
@@ -108,6 +94,97 @@ async def handle_transcription(
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+
+@app.get("/api/manage/files")
+async def list_permanent_files():
+    """获取永久存储目录下的所有 MP3 和对应的 JSON 文件"""
+    audio_dir = UPLOAD_DIR / "storage" / "permanent"
+    json_dir = DATA_DIR / "storage" / "permanent"
+
+    # 确保目录存在
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    files_list = []
+    # 扫描所有的 mp3 文件
+    for idx, audio_file in enumerate(sorted(audio_dir.glob("*.mp3"))):
+        base_name = audio_file.stem  # 获取不带后缀的文件名
+        json_file_name = f"{base_name}.json"
+
+        # 检查对应的 JSON 是否存在
+        has_json = (json_dir / json_file_name).exists()
+
+        files_list.append({
+            "id": idx + 1,
+            "mp3": audio_file.name,
+            "json": json_file_name if has_json else "Missing JSON"
+        })
+
+    return JSONResponse(content={"files": files_list})
+
+
+@app.post("/api/manage/submit")
+async def handle_manage_submit(
+        book: str = Form(...),
+        course: str = Form(...),
+        selected_file: str = Form(...)
+):
+    try:
+        # 1. 解析文件名
+        # "9-1-text.mp3 | 9-1-text.json" -> ["9-1-text.mp3", "9-1-text.json"]
+        parts = [p.strip() for p in selected_file.split("|")]
+        if len(parts) != 2:
+            raise HTTPException(status_code=400, detail="Invalid file pair format")
+
+        filename = selected_file.split(".")[0]
+
+        mp3_filename, json_filename = parts[0], parts[1]
+
+        # 2. 构建物理路径
+        # 目标文件夹: resources/书籍/课程
+        target_dir = Path("resources") / book / course
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        source_mp3 = UPLOAD_DIR / "storage" / "permanent" / mp3_filename
+        source_json = DATA_DIR / "storage" / "permanent" / json_filename
+
+        dest_mp3_path = target_dir / mp3_filename
+        dest_json_path = target_dir / json_filename
+
+        # 3. 执行物理移动 (Move)
+        if source_mp3.exists():
+            shutil.move(str(source_mp3), str(dest_mp3_path))
+        if source_json.exists() and json_filename != "Missing JSON":
+            shutil.move(str(source_json), str(dest_json_path))
+
+        # 4. 数据库操作
+        db_path = Path("db/jvdb.sqlite")
+        db_path.parent.mkdir(exist_ok=True)
+
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+
+        # 准备插入数据
+        # 字段: book, course, filename, format, location
+        records = [
+            (book, course, filename, "mp3", str(dest_mp3_path).replace("\\", "/")),
+            (book, course, filename, "json", str(dest_json_path).replace("\\", "/"))
+        ]
+
+        cursor.executemany(
+            "INSERT INTO voice_info (book, course, filename, format, location) VALUES (?, ?, ?, ?, ?)",
+            records
+        )
+
+        conn.commit()
+        conn.close()
+
+        print(f"Successfully archived: {mp3_filename} to {target_dir}")
+
+        return {"status": "success", "message": "Files moved and database updated."}
+
+    except Exception as e:
+        print(f"Error in handle_manage_submit: {str(e)}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 if __name__ == "__main__":
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
