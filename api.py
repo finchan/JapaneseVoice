@@ -30,7 +30,7 @@ async def translate_mazii(keyword: str = Query(...)):
 
     # Mazii API payload {dict: "jacn", type: "kanji", query: "暖かい", page: 1}
     payload = {
-        "dict": "jatw",  # Japanese to jaen/jacn
+        "dict": "jatw",  # Japanese to jatw/jaen/jacn
         "type": "word",
         "query": clean_keyword,
         "limit": 1
