@@ -323,5 +323,262 @@ async def convert_text_to_voice(
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# VERB CONJUGATION ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+DB_PATH = Path("db/jvdb.sqlite")
+
+def get_db():
+    db_path = Path("db/jvdb.sqlite")
+    db_path.parent.mkdir(exist_ok=True)
+    return sqlite3.connect(str(db_path))
+
+
+# ── DDL: create japanese_verbs table if not exists ──────────────────────────
+def init_verb_table():
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS japanese_verbs (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            verb       TEXT NOT NULL,
+            reading    TEXT NOT NULL,
+            type       TEXT NOT NULL CHECK(type IN ('ichidan','godan','kuru','suru')),
+            meaning    TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_jv_verb    ON japanese_verbs(verb)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_jv_type    ON japanese_verbs(type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_jv_reading ON japanese_verbs(reading)")
+    conn.commit()
+    conn.close()
+
+init_verb_table()
+
+
+# ── Conjugation rule engine ──────────────────────────────────────────────────
+# Five-step (godan) ending → row mappings
+GODAN = {
+    'く': dict(i='き', a='か', e='け', o='こ', te='いて', ta='いた'),
+    'ぐ': dict(i='ぎ', a='が', e='げ', o='ご', te='いで', ta='いだ'),
+    'す': dict(i='し', a='さ', e='せ', o='そ', te='して', ta='した'),
+    'つ': dict(i='ち', a='た', e='て', o='と', te='って', ta='った'),
+    'ぬ': dict(i='に', a='な', e='ね', o='の', te='んで', ta='んだ'),
+    'ぶ': dict(i='び', a='ば', e='べ', o='ぼ', te='んで', ta='んだ'),
+    'む': dict(i='み', a='ま', e='め', o='も', te='んで', ta='んだ'),
+    'る': dict(i='り', a='ら', e='れ', o='ろ', te='って', ta='った'),
+    'う': dict(i='い', a='わ', e='え', o='お', te='って', ta='った'),
+}
+
+
+def conjugate(verb: str, verb_type: str) -> dict:
+    """
+    Returns a dict with all basic forms + auxiliary compound forms.
+    For suru verbs the stored verb may omit trailing する (e.g. 発展).
+    """
+    r = {}
+
+    if verb_type == 'ichidan':
+        # Remove trailing る to get stem
+        stem = verb[:-1] if verb.endswith('る') else verb
+        r['原形']  = verb
+        r['ます形'] = stem + 'ます'
+        r['ない形'] = stem + 'ない'
+        r['て形']   = stem + 'て'
+        r['た形']   = stem + 'た'
+        r['ば形']   = stem + 'れば'
+        r['意向形'] = stem + 'よう'
+        r['可能形'] = stem + 'られる'
+        r['受身形'] = stem + 'られる'
+        r['使役形'] = stem + 'させる'
+        te_stem     = stem + 'て'
+
+    elif verb_type == 'godan':
+        ending = verb[-1]
+        rows   = GODAN.get(ending, {})
+        stem   = verb[:-1]
+        r['原形']  = verb
+        r['ます形'] = stem + rows.get('i', '') + 'ます'
+        r['ない形'] = stem + rows.get('a', '') + 'ない'
+        r['て形']   = stem + rows.get('te', '')
+        r['た形']   = stem + rows.get('ta', '')
+        r['ば形']   = stem + rows.get('e', '') + 'ば'
+        r['意向形'] = stem + rows.get('o', '') + 'う'
+        r['可能形'] = stem + rows.get('e', '') + 'る'
+        r['受身形'] = stem + rows.get('a', '') + 'れる'
+        r['使役形'] = stem + rows.get('a', '') + 'せる'
+        te_stem     = stem + rows.get('te', '')
+
+    elif verb_type == 'kuru':
+        r['原形']  = 'くる'
+        r['ます形'] = 'きます'
+        r['ない形'] = 'こない'
+        r['て形']   = 'きて'
+        r['た形']   = 'きた'
+        r['ば形']   = 'くれば'
+        r['意向形'] = 'こよう'
+        r['可能形'] = 'こられる'
+        r['受身形'] = 'こられる'
+        r['使役形'] = 'こさせる'
+        te_stem     = 'きて'
+
+    elif verb_type == 'suru':
+        # verb may be bare noun (発展) or full する
+        base = verb if verb == 'する' else verb + 'する'
+        noun = '' if verb == 'する' else verb
+        r['原形']  = base
+        r['ます形'] = noun + 'します'
+        r['ない形'] = noun + 'しない'
+        r['て形']   = noun + 'して'
+        r['た形']   = noun + 'した'
+        r['ば形']   = noun + 'すれば'
+        r['意向形'] = noun + 'しよう'
+        r['可能形'] = noun + 'できる'
+        r['受身形'] = noun + 'される'
+        r['使役形'] = noun + 'させる'
+        te_stem     = noun + 'して'
+    else:
+        return r
+
+    te = r.get('て形', te_stem)
+
+    # ── Auxiliary compound forms keyed as aux_{catKey}__{form} ──────────────
+    aux = {
+        # テンス・アスペクト
+        'tense_aspect__ている':    te + 'いる',
+        'tense_aspect__ていた':    te + 'いた',
+        'tense_aspect__てある':    te + 'ある',
+        'tense_aspect__てあった':  te + 'あった',
+        'tense_aspect__てしまう':  te + 'しまう',
+        'tense_aspect__てしまった': te + 'しまった',
+        # 授受
+        'juju__てあげる':   te + 'あげる',
+        'juju__てもらう':   te + 'もらう',
+        'juju__てくれる':   te + 'くれる',
+        'juju__てあげた':   te + 'あげた',
+        'juju__てもらった': te + 'もらった',
+        'juju__てくれた':   te + 'くれた',
+        # 願望
+        'desire__たい':       r.get('ます形', '').replace('ます', '') + 'たい',
+        'desire__たくない':   r.get('ます形', '').replace('ます', '') + 'たくない',
+        'desire__たかった':   r.get('ます形', '').replace('ます', '') + 'たかった',
+        'desire__たがる':     r.get('ます形', '').replace('ます', '') + 'たがる',
+        'desire__たがっている': r.get('ます形', '').replace('ます', '') + 'たがっている',
+        # 推量
+        'conjecture__でしょう':    r.get('原形', '') + 'でしょう',
+        'conjecture__だろう':      r.get('原形', '') + 'だろう',
+        'conjecture__はずだ':      r.get('原形', '') + 'はずだ',
+        'conjecture__はずがない':  r.get('原形', '') + 'はずがない',
+        'conjecture__にちがいない': r.get('原形', '') + 'にちがいない',
+        # 可能性
+        'possibility__かもしれない':    r.get('原形', '') + 'かもしれない',
+        'possibility__かもしれなかった': r.get('た形', '') + 'かもしれなかった',
+        # 義務
+        'obligation__べきだ':         r.get('原形', '') + 'べきだ',
+        'obligation__べきではない':    r.get('原形', '') + 'べきではない',
+        'obligation__なければならない': r.get('ない形', '').replace('ない','') + 'なければならない',
+        'obligation__なくてはいけない': r.get('ない形', '').replace('ない','') + 'なくてはいけない',
+        # 許可
+        'permission__てもいい':      te + 'もいい',
+        'permission__てはいけない':  te + 'はいけない',
+        'permission__てもかまわない': te + 'もかまわない',
+        # 試み
+        'attempt__てみる':  te + 'みる',
+        'attempt__てみた':  te + 'みた',
+        'attempt__ておく':  te + 'おく',
+        'attempt__ておいた': te + 'おいた',
+        # 変化
+        'change__てくる': te + 'くる',
+        'change__ていく': te + 'いく',
+        'change__てきた': te + 'きた',
+        # 否定丁寧
+        'negative_polite__ません':      r.get('ます形', '').replace('ます','') + 'ません',
+        'negative_polite__ませんでした': r.get('ます形', '').replace('ます','') + 'ませんでした',
+        'negative_polite__ないでください': r.get('ない形', '') + 'でください',
+        'negative_polite__なくてもいい':  r.get('ない形', '').replace('ない','な') + 'くてもいい',
+        # 条件
+        'conditional__たら': r.get('た形', '') + 'ら',
+        'conditional__なら': r.get('原形', '') + 'なら',
+        'conditional__と':   r.get('原形', '') + 'と',
+        # 使役受身複合
+        'causative_passive__させられる':  r.get('使役形', '').replace('る','') + 'られる' if verb_type in ('ichidan','kuru') else r.get('使役形', '').replace('せる','させられる'),
+        'causative_passive__てもらえる':  te + 'もらえる',
+        'causative_passive__させてもらう': r.get('使役形', '') + 'もらう',
+        # 依頼
+        'request__てください':   te + 'ください',
+        'request__てほしい':     te + 'ほしい',
+        'request__てもらいたい': te + 'もらいたい',
+        # 様態伝聞
+        'hearsay__そうだ（様態）': r.get('ます形', '').replace('ます','') + 'そうだ',
+        'hearsay__そうだ（伝聞）': r.get('原形', '') + 'そうだ',
+        'hearsay__らしい':        r.get('原形', '') + 'らしい',
+        'hearsay__ようだ':        r.get('原形', '') + 'ようだ',
+    }
+
+    for k, v in aux.items():
+        r[f'aux_{k}'] = v
+
+    return r
+
+
+# ── API: search verb ─────────────────────────────────────────────────────────
+from pydantic import BaseModel
+
+class VerbSearchRequest(BaseModel):
+    verb: str
+
+class VerbConjugateRequest(BaseModel):
+    verb: str
+    type: str
+
+class TtsRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/verbs/search")
+async def search_verb(req: VerbSearchRequest):
+    """Search japanese_verbs table. Returns found=False if outside the vocabulary."""
+    q = req.verb.strip()
+    conn = get_db()
+    cursor = conn.cursor()
+    # Try exact match on verb or reading
+    cursor.execute(
+        "SELECT verb, reading, type, meaning FROM japanese_verbs WHERE verb=? OR reading=? LIMIT 1",
+        (q, q)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return {"found": False}
+    return {
+        "found": True,
+        "verb_info": {"verb": row[0], "reading": row[1], "type": row[2], "meaning": row[3]}
+    }
+
+
+@app.post("/api/verbs/conjugate")
+async def conjugate_verb(req: VerbConjugateRequest):
+    """Run rule-based conjugation engine and return all forms."""
+    result = conjugate(req.verb.strip(), req.type.strip())
+    return {"conjugations": result}
+
+
+@app.post("/api/tts-stream")
+async def tts_stream(req: TtsRequest):
+    """Stream TTS audio for a single text string via edge-tts."""
+    VOICE = "ja-JP-NanamiNeural"
+    try:
+        async def gen():
+            communicate = edge_tts.Communicate(req.text, VOICE)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+
+        return StreamingResponse(gen(), media_type="audio/mpeg")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 if __name__ == "__main__":
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
