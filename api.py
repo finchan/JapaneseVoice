@@ -1,15 +1,26 @@
-import json as python_json
+import os
 import uvicorn
 import httpx
+import edge_tts
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
-from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 from transcribe import Transcriber
 from pathlib import Path
 import sqlite3
 import shutil
 
 app = FastAPI(title="Japanese Transcription API", version="1.0.0")
+# 【第一处：路径检查打印】
+# 放在这里，每次运行后台，控制台第一行就会告诉你它在哪个目录下找资源
+print("="*50)
+print(f"当前 Python 运行的工作目录 (CWD): {os.getcwd()}")
+print(f"FastAPI 尝试挂载的资源绝对路径: {Path('resources').resolve()}")
+print("="*50)
+
+# 【第二处：挂载静态目录】
+# 确保 directory="resources" 对应的文件夹就在上面打印出的路径里
+app.mount("/resources", StaticFiles(directory="resources"), name="resources")
 
 app.add_middleware(
     CORSMiddleware,
@@ -184,6 +195,133 @@ async def handle_manage_submit(
     except Exception as e:
         print(f"Error in handle_manage_submit: {str(e)}")
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+@app.get("/api/sources/books")
+async def get_books():
+    try:
+        conn = sqlite3.connect("db/jvdb.sqlite")
+        cursor = conn.cursor()
+        query = "SELECT DISTINCT book FROM voice_info ORDER BY book ASC"
+        cursor.execute(query)
+        books = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return {"books": books}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/api/sources/courses")
+async def get_courses(book: str):
+    try:
+        conn = sqlite3.connect("db/jvdb.sqlite")
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT course FROM voice_info WHERE book = ? ORDER BY course", (book,))
+        courses = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return {"courses": courses}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/api/sources/files")
+async def get_files_list(book: str, course: str):
+    try:
+        conn = sqlite3.connect("db/jvdb.sqlite")
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, filename, location 
+            FROM voice_info 
+            WHERE book = ? AND course = ? AND format = 'mp3' 
+            ORDER BY filename ASC
+        """, (book, course))
+        rows = cursor.fetchall()
+        conn.close()
+        files = [{"id": r[0], "name": r[1], "path": r[2]} for r in rows]
+        return {"files": files}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/sources/load_content")
+async def load_specific_content(book: str, course: str, filename: str):
+    """获取 MP3 URL 及其对应的 JSON 字幕内容（简化版）"""
+    try:
+        conn = sqlite3.connect("db/jvdb.sqlite")
+        cursor = conn.cursor()
+
+        # 1. 获取 MP3 物理路径
+        cursor.execute("SELECT location FROM voice_info WHERE book=? AND course=? AND filename=? AND format='mp3'",
+                       (book, course, filename))
+        mp3_row = cursor.fetchone()
+
+        # 2. 获取 JSON 物理路径 (构造同名的 .json 文件名进行查询)
+        cursor.execute("SELECT location FROM voice_info WHERE book=? AND course=? AND filename=? AND format='json'",
+                       (book, course, filename))
+        json_row = cursor.fetchone()
+        conn.close()
+
+        if not mp3_row:
+            raise HTTPException(404, "MP3 record not found in database")
+
+        # --- 处理 MP3 URL ---
+        db_path = mp3_row[0].replace("\\", "/")
+        # 仅仅去掉开头的 resources/ 字符串，不要进行 quote 编码
+        url_sub_path = db_path[len("resources/"):] if db_path.startswith("resources/") else db_path
+
+        # 返回原始的中文字符串路径，前端 fetch 时浏览器会自动处理编码
+        mp3_url = f"http://localhost:8000/resources/{url_sub_path}"
+
+        # --- 读取 JSON 字幕数据 ---
+        json_data = []
+        if json_row:
+            # 路径标准化并转为绝对路径（Path 对象会自动处理 Windows/Linux 差异）
+            json_phys_path = Path(json_row[0]).resolve()
+
+            if json_phys_path.exists():
+                with open(json_phys_path, 'r', encoding='utf-8') as f:
+                    raw_data = python_json.load(f)
+                    # 统一返回 segments 格式（兼容字典和数组格式）
+                    json_data = raw_data.get("segments", raw_data) if isinstance(raw_data, dict) else raw_data
+            else:
+                print(f"Warning: JSON file not found at {json_phys_path}")
+
+        return {
+            "mp3_url": mp3_url,
+            "segments": json_data
+        }
+    except Exception as e:
+        print(f"Load content error: {str(e)}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+import json as python_json
+from fastapi import Form
+from fastapi.responses import JSONResponse, StreamingResponse
+
+
+@app.post("/api/convert")
+async def convert_text_to_voice(
+        filename: str = Form(...),
+        text: str = Form(...),
+        role: str = Form(...)
+):
+    try:
+        VOICE = "ja-JP-NanamiNeural"
+
+        async def audio_stream_generator():
+            communicate = edge_tts.Communicate(text, VOICE)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+
+        return StreamingResponse(
+            audio_stream_generator(),
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": f"attachment; filename={filename}.mp3"}
+        )
+
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
 
 if __name__ == "__main__":
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
