@@ -404,42 +404,43 @@ def conjugate(verb: str, verb_type: str) -> dict:
         # Special case: 行く (iku) - irregular て-form and た-form
         is_iku = (verb in ('行く', 'いく'))
 
-        # Special case: 問う (とう), 乞う (こう), 請う (こう) - 促音便
-        is_tou_kou = verb in ('問う', 'とう', '乞う', 'こう', '請う', 'こう')
+        # Special case: 問う (とう), 乞う (こう), 請う (こう), 厭う (とう) - 促音便 / ウ音便 (both forms)
+        is_tou_kou = verb in ('問う', 'とう', '乞う', 'こう', '請う', '厭う', 'いとう')
 
         # Special case: ある (aru) - special verb for existence
         is_aru = (verb in ('ある', 'ある'))
 
-        # Special keigo godan verbs (ザ変敬語) - support both kanji and hiragana
+        # Special keigo godan verbs (ザ変敬語)
+        # masu形: ru-verb change (る→い) + ます
+        # 命令形: special ru-verb change (る→い)
+        # Other conjugations follow regular GODAN rules (る→って/った)
         keigo_verbs = {
-            'いらっしゃる': {'stem': 'いらっしゃ', 'masu': 'いらっしゃります', 'te': 'いらっしゃって', 'imperative': 'いらっしゃい'},
-            'いらしゃる':   {'stem': 'いらしゃ', 'masu': 'いらしゃります', 'te': 'いらしゃって', 'imperative': 'いらしゃい'},
-            'おっしゃる':   {'stem': 'おっしゃ', 'masu': 'おっしゃいます', 'te': 'おっしゃって', 'imperative': 'おっしゃい'},
-            'なさる':       {'stem': 'なさ', 'masu': 'なさいます', 'te': 'なさって', 'imperative': 'なさい'},
-            '下さる':       {'stem': 'くださ', 'masu': 'くださいます', 'te': 'くだされて', 'imperative': 'ください'},
-            'ください':     {'stem': 'ください', 'masu': 'くださいます', 'te': 'くだされて', 'imperative': 'ください'},
-            'ございます':   {'stem': 'ごわ', 'masu': 'ございます', 'te': 'ございますて', 'imperative': 'ございましたら'},
+            'いらっしゃる': {'stem': 'いらっしゃ', 'masu': 'いらっしゃいます', 'imperative': 'いらっしゃい'},
+            'おっしゃる':   {'stem': 'おっしゃ', 'masu': 'おっしゃいます', 'imperative': 'おっしゃい'},
+            'なさる':       {'stem': 'なさ', 'masu': 'なさいます', 'imperative': 'なさい'},
+            '下さる':       {'stem': 'くださ', 'masu': 'くださいます', 'imperative': 'ください'},
+            'くださる':     {'stem': 'くださ', 'masu': 'くださいます', 'imperative': 'ください'},
+            'ござる':      {'stem': 'ござ', 'masu': 'ございます', 'imperative': 'ござい'},
         }
 
         is_keigo = verb in keigo_verbs
-
-        # Determine て-form and た-form
-        te_form = ''
-        ta_form = ''
 
         if is_iku:
             te_form = 'いって'
             ta_form = 'いった'
         elif is_tou_kou:
             if verb in ('問う', 'とう'):
-                te_form = '問って'
-                ta_form = '問った'
-            else:  # 乞う, こう, 請う, こう
-                te_form = '乞って' if verb in ('乞う', 'こう') else '請って'
-                ta_form = '乞った' if verb in ('乞う', 'こう') else '請った'
+                te_form = 'とって/とうて'
+                ta_form = '問った/問うた'
+            elif verb in ('厭う', 'いとう'):
+                te_form = 'いとって/いとうて'
+                ta_form = 'いとった/いとうた'
+            else:  # 乞う, こう, 請う
+                te_form = 'こって/こうて'
+                ta_form = 'こった/こうた'
         elif is_keigo:
-            keigo_info = keigo_verbs[verb]
-            te_form = keigo_info['te']
+            te_form = stem + 'って'
+            ta_form = stem + 'った'
         elif is_aru:
             te_form = 'あって'
             ta_form = 'あった'
@@ -451,17 +452,17 @@ def conjugate(verb: str, verb_type: str) -> dict:
             keigo_info = keigo_verbs[verb]
             r['原形']  = verb
             r['ます形'] = keigo_info['masu']
-            r['ない形'] = stem + 'ない'
-            r['て形']   = keigo_info['te']
-            r['た形']   = te_form[:-1] + 'た' if te_form else stem + 'た'
-            r['ば形']   = stem + 'れば'
-            r['意向形'] = stem + 'ましょう'
+            r['ない形'] = stem + rows.get('a', '') + 'ない'
+            r['て形']   = stem + 'って'
+            r['た形']   = stem + 'った'
+            r['ば形']   = stem + rows.get('e', '') + 'ば'
+            r['意向形'] = stem + rows.get('o', '') + 'う'
             r['命令形'] = keigo_info['imperative']
             r['禁止形'] = verb + 'な'
-            r['可能形'] = stem + 'れる' if verb != '下さる' else 'くだされる'
-            r['受身形'] = stem + 'れる' if verb != '下さる' else 'くだされる'
-            r['使役形'] = stem + 'せる' if verb != '下さる' else 'くださせる'
-            te_stem     = keigo_info['te']
+            r['可能形'] = stem + rows.get('e', '') + 'る'
+            r['受身形'] = stem + rows.get('a', '') + 'れる'
+            r['使役形'] = stem + rows.get('a', '') + 'せる'
+            te_stem     = stem + 'って'
         elif is_aru:
             r['原形']  = verb
             r['ます形'] = 'あります'
@@ -517,15 +518,12 @@ def conjugate(verb: str, verb_type: str) -> dict:
         r['た形']   = noun + 'した'
         r['ば形']   = noun + 'すれば'
         r['意向形'] = noun + 'しよう'
-        r['命令形'] = noun + 'しろ'
+        r['命令形'] = noun + 'しろ/' + noun + 'せよ'
         r['禁止形'] = base + 'な'
         r['可能形'] = noun + 'できる'
         r['受身形'] = noun + 'される'
         r['使役形'] = noun + 'させる'
         te_stem     = noun + 'して'
-        
-        # Special: する has two imperative forms
-        r['命令形_せよ'] = noun + 'せよ'
 
     else:
         return r
