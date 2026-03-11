@@ -518,7 +518,7 @@ def conjugate(verb: str, verb_type: str) -> dict:
         r['た形']   = noun + 'した'
         r['ば形']   = noun + 'すれば'
         r['意向形'] = noun + 'しよう'
-        r['命令形'] = noun + 'しろ/' + noun + 'せよ'
+        r['命令形'] = noun + 'しろ / ' + noun + 'せよ'
         r['禁止形'] = base + 'な'
         r['可能形'] = noun + 'できる'
         r['受身形'] = noun + 'される'
