@@ -667,5 +667,130 @@ async def tts_stream(req: TtsRequest):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ADJECTIVE I (い形容词) CONJUGATION ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+SPECIAL_ADJ_I = {
+    'いい': {
+        '现在式肯定（终止形 / 礼貌形）': 'いい / いです',
+        '现在式否定 1（否定形 1 / 礼貌否定 1）': 'よくない / よくないです',
+        '现在式否定 2（否定形 2 / 礼貌否定 2）': 'よくは / よくありません',
+        '过去式肯定（过去形 / 礼貌过去形）': 'よかった / よかったです',
+        '过去式否定 1（过去否定 1 / 礼貌过去否定 1）': 'よくなかった / よくなかったです',
+        '过去式否定 2（过去否定 2 / 礼貌过去否定 2）': 'よくはなかった / よくなくなりました',
+        '副词化（连用形）': 'よく',
+        '名词化 1（程度名词）': 'よさ',
+        '名词化 2（属性名词）': 'よみ',
+        '并列/中顿（て形）': 'よくて',
+        '假定形（条件形）': 'よければ',
+        '推量形（推测形 / 礼貌推测）': 'よかろう / いいでしょう',
+        '样态（样态形 / 礼貌样态）': 'よさそうだ / よさそうです',
+        '程度过分（简体复合 / 礼貌复合）': 'よすぎる / よすぎます',
+    },
+    '良い': {
+        '现在式肯定（终止形 / 礼貌形）': 'いい / いです',
+        '现在式否定 1（否定形 1 / 礼貌否定 1）': 'よくない / よくないです',
+        '现在式否定 2（否定形 2 / 礼貌否定 2）': 'よくは / よくありません',
+        '过去式肯定（过去形 / 礼貌过去形）': 'よかった / よかったです',
+        '过去式否定 1（过去否定 1 / 礼貌过去否定 1）': 'よくなかった / よくなかったです',
+        '过去式否定 2（过去否定 2 / 礼貌过去否定 2）': 'よくはなかった / よくなくなりました',
+        '副词化（连用形）': 'よく',
+        '名词化 1（程度名词）': 'よさ',
+        '名词化 2（属性名词）': 'よみ',
+        '并列/中顿（て形）': 'よくて',
+        '假定形（条件形）': 'よければ',
+        '推量形（推测形 / 礼貌推测）': 'よかろう / いいでしょう',
+        '样态（样态形 / 礼貌样态）': 'よさそうだ / よさそうです',
+        '程度过分（简体复合 / 礼貌复合）': 'よすぎる / よすぎます',
+    }
+}
+
+def init_adj_i_table():
+    """Create japanese_adj_i table if not exists."""
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS japanese_adj_i (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            adj_i      TEXT NOT NULL,
+            reading    TEXT NOT NULL,
+            meaning    TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_adj_i ON japanese_adj_i(adj_i)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_adj_i_reading ON japanese_adj_i(reading)")
+    conn.commit()
+    conn.close()
+
+init_adj_i_table()
+
+
+def conjugate_adj_i(adj_i: str) -> dict:
+    """
+    Generate all conjugation forms for i-adjectives based on Excel rules.
+    Special cases are handled first.
+    """
+    # Check for special irregular adjectives
+    if adj_i in SPECIAL_ADJ_I:
+        return SPECIAL_ADJ_I[adj_i]
+    
+    r = {}
+    stem = adj_i[:-1] if adj_i.endswith('い') else adj_i
+    
+    # 14 basic forms from Excel
+    r['现在式肯定（终止形 / 礼貌形）'] = f"{adj_i} / {adj_i}です"
+    r['现在式否定 1（否定形 1 / 礼貌否定 1）'] = f"{stem}くない / {stem}くないです"
+    r['现在式否定 2（否定形 2 / 礼貌否定 2）'] = f"{stem}くはない / {stem}くありません"
+    r['过去式肯定（过去形 / 礼貌过去形）'] = f"{stem}かった / {stem}かったです"
+    r['过去式否定 1（过去否定 1 / 礼貌过去否定 1）'] = f"{stem}くなかった / {stem}くなかったです"
+    r['过去式否定 2（过去否定 2 / 礼貌过去否定 2）'] = f"{stem}くはなかった / {stem}くありませんでした"
+    r['副词化（连用形）'] = stem + 'く'
+    r['名词化 1（程度名词）'] = stem + 'さ'
+    r['名词化 2（属性名词）'] = stem + 'み'
+    r['并列/中顿（て形）'] = stem + 'くて'
+    r['假定形（条件形）'] = stem + 'ければ'
+    r['推量形（推测形 / 礼貌推测）'] = f"{stem}かろう / {adj_i}でしょう"
+    r['样态（样态形 / 礼貌样态）'] = f"{stem}そうだ / {stem}そうです"
+    r['程度过分（简体复合 / 礼貌复合）'] = f"{stem}すぎる / {stem}すぎます"
+    
+    return r
+
+
+class AdjISearchRequest(BaseModel):
+    adj_i: str
+
+
+class AdjIConjugateRequest(BaseModel):
+    adj_i: str
+
+
+@app.post("/api/adjectives-i/search")
+async def search_adj_i(req: AdjISearchRequest):
+    """Search japanese_adj_i table for an i-adjective."""
+    q = req.adj_i.strip()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT adj_i, reading, meaning FROM japanese_adj_i WHERE adj_i=? OR reading=? LIMIT 1",
+        (q, q)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return {"found": False}
+    return {
+        "found": True,
+        "adj_i_info": {"adj_i": row[0], "reading": row[1], "meaning": row[2]}
+    }
+
+
+@app.post("/api/adjectives-i/conjugate")
+async def conjugate_adj_i_endpoint(req: AdjIConjugateRequest):
+    """Generate all conjugation forms for an i-adjective."""
+    result = conjugate_adj_i(req.adj_i.strip())
+    return {"conjugations": result}
+
+
 if __name__ == "__main__":
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
