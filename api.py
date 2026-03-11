@@ -13,10 +13,10 @@ import shutil
 app = FastAPI(title="Japanese Transcription API", version="1.0.0")
 # 【第一处：路径检查打印】
 # 放在这里，每次运行后台，控制台第一行就会告诉你它在哪个目录下找资源
-print("="*50)
+print("=" * 50)
 print(f"当前 Python 运行的工作目录 (CWD): {os.getcwd()}")
 print(f"FastAPI 尝试挂载的资源绝对路径: {Path('resources').resolve()}")
-print("="*50)
+print("=" * 50)
 
 # 【第二处：挂载静态目录】
 # 确保 directory="resources" 对应的文件夹就在上面打印出的路径里
@@ -35,6 +35,7 @@ UPLOAD_DIR = Path("uploads")
 DATA_DIR = Path("data_cache")
 UPLOAD_DIR.mkdir(exist_ok=True)
 DATA_DIR.mkdir(exist_ok=True)
+
 
 @app.get("/translate_mazii")
 async def translate_mazii(keyword: str = Query(...)):
@@ -104,6 +105,7 @@ async def handle_transcription(
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 @app.get("/api/manage/files")
 async def list_permanent_files():
@@ -196,6 +198,7 @@ async def handle_manage_submit(
         print(f"Error in handle_manage_submit: {str(e)}")
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
+
 @app.get("/api/sources/books")
 async def get_books():
     try:
@@ -209,6 +212,7 @@ async def get_books():
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+
 @app.get("/api/sources/courses")
 async def get_courses(book: str):
     try:
@@ -220,6 +224,7 @@ async def get_courses(book: str):
         return {"courses": courses}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 @app.get("/api/sources/files")
 async def get_files_list(book: str, course: str):
@@ -329,6 +334,7 @@ async def convert_text_to_voice(
 
 DB_PATH = Path("db/jvdb.sqlite")
 
+
 def get_db():
     db_path = Path("db/jvdb.sqlite")
     db_path.parent.mkdir(exist_ok=True)
@@ -354,8 +360,8 @@ def init_verb_table():
     conn.commit()
     conn.close()
 
-init_verb_table()
 
+init_verb_table()
 
 # ── Conjugation rule engine ──────────────────────────────────────────────────
 # Five-step (godan) ending → row mappings
@@ -382,24 +388,24 @@ def conjugate(verb: str, verb_type: str) -> dict:
     if verb_type == 'ichidan':
         # Remove trailing る to get stem
         stem = verb[:-1] if verb.endswith('る') else verb
-        r['原形']  = verb
+        r['原形'] = verb
         r['ます形'] = stem + 'ます'
         r['ない形'] = stem + 'ない'
-        r['て形']   = stem + 'て'
-        r['た形']   = stem + 'た'
-        r['ば形']   = stem + 'れば'
+        r['て形'] = stem + 'て'
+        r['た形'] = stem + 'た'
+        r['ば形'] = stem + 'れば'
         r['意向形'] = stem + 'よう'
         r['命令形'] = stem + 'ろ'
         r['禁止形'] = stem + 'な'
         r['可能形'] = stem + 'られる'
         r['受身形'] = stem + 'られる'
         r['使役形'] = stem + 'させる'
-        te_stem     = stem + 'て'
+        te_stem = stem + 'て'
 
     elif verb_type == 'godan':
         ending = verb[-1]
-        rows   = GODAN.get(ending, {})
-        stem   = verb[:-1]
+        rows = GODAN.get(ending, {})
+        stem = verb[:-1]
 
         # Special case: 行く (iku) - irregular て-form and た-form
         is_iku = (verb in ('行く', 'いく'))
@@ -416,11 +422,11 @@ def conjugate(verb: str, verb_type: str) -> dict:
         # Other conjugations follow regular GODAN rules (る→って/った)
         keigo_verbs = {
             'いらっしゃる': {'stem': 'いらっしゃ', 'masu': 'いらっしゃいます', 'imperative': 'いらっしゃい'},
-            'おっしゃる':   {'stem': 'おっしゃ', 'masu': 'おっしゃいます', 'imperative': 'おっしゃい'},
-            'なさる':       {'stem': 'なさ', 'masu': 'なさいます', 'imperative': 'なさい'},
-            '下さる':       {'stem': 'くださ', 'masu': 'くださいます', 'imperative': 'ください'},
-            'くださる':     {'stem': 'くださ', 'masu': 'くださいます', 'imperative': 'ください'},
-            'ござる':      {'stem': 'ござ', 'masu': 'ございます', 'imperative': 'ござい'},
+            'おっしゃる': {'stem': 'おっしゃ', 'masu': 'おっしゃいます', 'imperative': 'おっしゃい'},
+            'なさる': {'stem': 'なさ', 'masu': 'なさいます', 'imperative': 'なさい'},
+            '下さる': {'stem': 'くださ', 'masu': 'くださいます', 'imperative': 'ください'},
+            'くださる': {'stem': 'くださ', 'masu': 'くださいます', 'imperative': 'ください'},
+            'ござる': {'stem': 'ござ', 'masu': 'ございます', 'imperative': 'ござい'},
         }
 
         is_keigo = verb in keigo_verbs
@@ -450,80 +456,80 @@ def conjugate(verb: str, verb_type: str) -> dict:
 
         if is_keigo:
             keigo_info = keigo_verbs[verb]
-            r['原形']  = verb
+            r['原形'] = verb
             r['ます形'] = keigo_info['masu']
             r['ない形'] = stem + rows.get('a', '') + 'ない'
-            r['て形']   = stem + 'って'
-            r['た形']   = stem + 'った'
-            r['ば形']   = stem + rows.get('e', '') + 'ば'
+            r['て形'] = stem + 'って'
+            r['た形'] = stem + 'った'
+            r['ば形'] = stem + rows.get('e', '') + 'ば'
             r['意向形'] = stem + rows.get('o', '') + 'う'
             r['命令形'] = keigo_info['imperative']
             r['禁止形'] = verb + 'な'
             r['可能形'] = stem + rows.get('e', '') + 'る'
             r['受身形'] = stem + rows.get('a', '') + 'れる'
             r['使役形'] = stem + rows.get('a', '') + 'せる'
-            te_stem     = stem + 'って'
+            te_stem = stem + 'って'
         elif is_aru:
-            r['原形']  = verb
+            r['原形'] = verb
             r['ます形'] = 'あります'
             r['ない形'] = 'ない'
-            r['て形']   = 'あって'
-            r['た形']   = 'あった'
-            r['ば形']   = 'あれば'
+            r['て形'] = 'あって'
+            r['た形'] = 'あった'
+            r['ば形'] = 'あれば'
             r['意向形'] = 'あろう'
             r['命令形'] = 'あれ'
             r['禁止形'] = verb + 'な'
             r['可能形'] = 'えられる'
             r['受身形'] = 'あられる'
             r['使役形'] = 'あさせる'
-            te_stem     = 'あって'
+            te_stem = 'あって'
         else:
-            r['原形']  = verb
+            r['原形'] = verb
             r['ます形'] = stem + rows.get('i', '') + 'ます'
             r['ない形'] = stem + rows.get('a', '') + 'ない'
-            r['て形']   = te_form
-            r['た形']   = ta_form
-            r['ば形']   = stem + rows.get('e', '') + 'ば'
+            r['て形'] = te_form
+            r['た形'] = ta_form
+            r['ば形'] = stem + rows.get('e', '') + 'ば'
             r['意向形'] = stem + rows.get('o', '') + 'う'
             r['命令形'] = stem + rows.get('e', '')
             r['禁止形'] = verb + 'な'
             r['可能形'] = stem + rows.get('e', '') + 'る'
             r['受身形'] = stem + rows.get('a', '') + 'れる'
             r['使役形'] = stem + rows.get('a', '') + 'せる'
-            te_stem     = te_form
+            te_stem = te_form
 
     elif verb_type == 'kuru':
-        r['原形']  = 'くる'
+        r['原形'] = 'くる'
         r['ます形'] = 'きます'
         r['ない形'] = 'こない'
-        r['て形']   = 'きて'
-        r['た形']   = 'きた'
-        r['ば形']   = 'くれば'
+        r['て形'] = 'きて'
+        r['た形'] = 'きた'
+        r['ば形'] = 'くれば'
         r['意向形'] = 'こよう'
         r['命令形'] = 'こい'
         r['禁止形'] = 'くるな'
         r['可能形'] = 'こられる'
         r['受身形'] = 'こられる'
         r['使役形'] = 'こさせる'
-        te_stem     = 'きて'
+        te_stem = 'きて'
 
     elif verb_type == 'suru':
         # verb may be bare noun (発展) or full する
         base = verb if verb == 'する' else verb + 'する'
         noun = '' if verb == 'する' else verb
-        r['原形']  = base
+        r['原形'] = base
         r['ます形'] = noun + 'します'
         r['ない形'] = noun + 'しない'
-        r['て形']   = noun + 'して'
-        r['た形']   = noun + 'した'
-        r['ば形']   = noun + 'すれば'
+        r['て形'] = noun + 'して'
+        r['た形'] = noun + 'した'
+        r['ば形'] = noun + 'すれば'
         r['意向形'] = noun + 'しよう'
         r['命令形'] = noun + 'しろ / ' + noun + 'せよ'
         r['禁止形'] = base + 'な'
         r['可能形'] = noun + 'できる'
         r['受身形'] = noun + 'される'
         r['使役形'] = noun + 'させる'
-        te_stem     = noun + 'して'
+        te_stem = noun + 'して'
 
     else:
         return r
@@ -533,74 +539,75 @@ def conjugate(verb: str, verb_type: str) -> dict:
     # ── Auxiliary compound forms keyed as aux_{catKey}__{form} ──────────────
     aux = {
         # テンス・アスペクト
-        'tense_aspect__ている':    te + 'いる',
-        'tense_aspect__ていた':    te + 'いた',
-        'tense_aspect__てある':    te + 'ある',
-        'tense_aspect__てあった':  te + 'あった',
-        'tense_aspect__てしまう':  te + 'しまう',
+        'tense_aspect__ている': te + 'いる',
+        'tense_aspect__ていた': te + 'いた',
+        'tense_aspect__てある': te + 'ある',
+        'tense_aspect__てあった': te + 'あった',
+        'tense_aspect__てしまう': te + 'しまう',
         'tense_aspect__てしまった': te + 'しまった',
         # 授受
-        'juju__てあげる':   te + 'あげる',
-        'juju__てもらう':   te + 'もらう',
-        'juju__てくれる':   te + 'くれる',
-        'juju__てあげた':   te + 'あげた',
+        'juju__てあげる': te + 'あげる',
+        'juju__てもらう': te + 'もらう',
+        'juju__てくれる': te + 'くれる',
+        'juju__てあげた': te + 'あげた',
         'juju__てもらった': te + 'もらった',
-        'juju__てくれた':   te + 'くれた',
+        'juju__てくれた': te + 'くれた',
         # 願望
-        'desire__たい':       r.get('ます形', '').replace('ます', '') + 'たい',
-        'desire__たくない':   r.get('ます形', '').replace('ます', '') + 'たくない',
-        'desire__たかった':   r.get('ます形', '').replace('ます', '') + 'たかった',
-        'desire__たがる':     r.get('ます形', '').replace('ます', '') + 'たがる',
+        'desire__たい': r.get('ます形', '').replace('ます', '') + 'たい',
+        'desire__たくない': r.get('ます形', '').replace('ます', '') + 'たくない',
+        'desire__たかった': r.get('ます形', '').replace('ます', '') + 'たかった',
+        'desire__たがる': r.get('ます形', '').replace('ます', '') + 'たがる',
         'desire__たがっている': r.get('ます形', '').replace('ます', '') + 'たがっている',
         # 推量
-        'conjecture__でしょう':    r.get('原形', '') + 'でしょう',
-        'conjecture__だろう':      r.get('原形', '') + 'だろう',
-        'conjecture__はずだ':      r.get('原形', '') + 'はずだ',
-        'conjecture__はずがない':  r.get('原形', '') + 'はずがない',
+        'conjecture__でしょう': r.get('原形', '') + 'でしょう',
+        'conjecture__だろう': r.get('原形', '') + 'だろう',
+        'conjecture__はずだ': r.get('原形', '') + 'はずだ',
+        'conjecture__はずがない': r.get('原形', '') + 'はずがない',
         'conjecture__にちがいない': r.get('原形', '') + 'にちがいない',
         # 可能性
-        'possibility__かもしれない':    r.get('原形', '') + 'かもしれない',
+        'possibility__かもしれない': r.get('原形', '') + 'かもしれない',
         'possibility__かもしれなかった': r.get('た形', '') + 'かもしれなかった',
         # 義務
-        'obligation__べきだ':         r.get('原形', '') + 'べきだ',
-        'obligation__べきではない':    r.get('原形', '') + 'べきではない',
-        'obligation__なければならない': r.get('ない形', '').replace('ない','') + 'なければならない',
-        'obligation__なくてはいけない': r.get('ない形', '').replace('ない','') + 'なくてはいけない',
+        'obligation__べきだ': r.get('原形', '') + 'べきだ',
+        'obligation__べきではない': r.get('原形', '') + 'べきではない',
+        'obligation__なければならない': r.get('ない形', '').replace('ない', '') + 'なければならない',
+        'obligation__なくてはいけない': r.get('ない形', '').replace('ない', '') + 'なくてはいけない',
         # 許可
-        'permission__てもいい':      te + 'もいい',
-        'permission__てはいけない':  te + 'はいけない',
+        'permission__てもいい': te + 'もいい',
+        'permission__てはいけない': te + 'はいけない',
         'permission__てもかまわない': te + 'もかまわない',
         # 試み
-        'attempt__てみる':  te + 'みる',
-        'attempt__てみた':  te + 'みた',
-        'attempt__ておく':  te + 'おく',
+        'attempt__てみる': te + 'みる',
+        'attempt__てみた': te + 'みた',
+        'attempt__ておく': te + 'おく',
         'attempt__ておいた': te + 'おいた',
         # 変化
         'change__てくる': te + 'くる',
         'change__ていく': te + 'いく',
         'change__てきた': te + 'きた',
         # 否定丁寧
-        'negative_polite__ません':      r.get('ます形', '').replace('ます','') + 'ません',
-        'negative_polite__ませんでした': r.get('ます形', '').replace('ます','') + 'ませんでした',
+        'negative_polite__ません': r.get('ます形', '').replace('ます', '') + 'ません',
+        'negative_polite__ませんでした': r.get('ます形', '').replace('ます', '') + 'ませんでした',
         'negative_polite__ないでください': r.get('ない形', '') + 'でください',
-        'negative_polite__なくてもいい':  r.get('ない形', '').replace('ない','な') + 'くてもいい',
+        'negative_polite__なくてもいい': r.get('ない形', '').replace('ない', 'な') + 'くてもいい',
         # 条件
         'conditional__たら': r.get('た形', '') + 'ら',
         'conditional__なら': r.get('原形', '') + 'なら',
-        'conditional__と':   r.get('原形', '') + 'と',
+        'conditional__と': r.get('原形', '') + 'と',
         # 使役受身複合
-        'causative_passive__させられる':  r.get('使役形', '').replace('る','') + 'られる' if verb_type in ('ichidan','kuru') else r.get('使役形', '').replace('せる','させられる'),
-        'causative_passive__てもらえる':  te + 'もらえる',
+        'causative_passive__させられる': r.get('使役形', '').replace('る', '') + 'られる' if verb_type in (
+        'ichidan', 'kuru') else r.get('使役形', '').replace('せる', 'させられる'),
+        'causative_passive__てもらえる': te + 'もらえる',
         'causative_passive__させてもらう': r.get('使役形', '') + 'もらう',
         # 依頼
-        'request__てください':   te + 'ください',
-        'request__てほしい':     te + 'ほしい',
+        'request__てください': te + 'ください',
+        'request__てほしい': te + 'ほしい',
         'request__てもらいたい': te + 'もらいたい',
         # 様態伝聞
-        'hearsay__そうだ（様態）': r.get('ます形', '').replace('ます','') + 'そうだ',
+        'hearsay__そうだ（様態）': r.get('ます形', '').replace('ます', '') + 'そうだ',
         'hearsay__そうだ（伝聞）': r.get('原形', '') + 'そうだ',
-        'hearsay__らしい':        r.get('原形', '') + 'らしい',
-        'hearsay__ようだ':        r.get('原形', '') + 'ようだ',
+        'hearsay__らしい': r.get('原形', '') + 'らしい',
+        'hearsay__ようだ': r.get('原形', '') + 'ようだ',
     }
 
     for k, v in aux.items():
@@ -612,12 +619,15 @@ def conjugate(verb: str, verb_type: str) -> dict:
 # ── API: search verb ─────────────────────────────────────────────────────────
 from pydantic import BaseModel
 
+
 class VerbSearchRequest(BaseModel):
     verb: str
+
 
 class VerbConjugateRequest(BaseModel):
     verb: str
     type: str
+
 
 class TtsRequest(BaseModel):
     text: str
@@ -706,6 +716,7 @@ SPECIAL_ADJ_I = {
     }
 }
 
+
 def init_adj_i_table():
     """Create japanese_adj_i table if not exists."""
     conn = get_db()
@@ -723,6 +734,7 @@ def init_adj_i_table():
     conn.commit()
     conn.close()
 
+
 init_adj_i_table()
 
 
@@ -734,10 +746,10 @@ def conjugate_adj_i(adj_i: str) -> dict:
     # Check for special irregular adjectives
     if adj_i in SPECIAL_ADJ_I:
         return SPECIAL_ADJ_I[adj_i]
-    
+
     r = {}
     stem = adj_i[:-1] if adj_i.endswith('い') else adj_i
-    
+
     # 14 basic forms from Excel
     r['现在式肯定（终止形 / 礼貌形）'] = f"{adj_i} / {adj_i}です"
     r['现在式否定 1（否定形 1 / 礼貌否定 1）'] = f"{stem}くない / {stem}くないです"
@@ -753,7 +765,7 @@ def conjugate_adj_i(adj_i: str) -> dict:
     r['推量形（推测形 / 礼貌推测）'] = f"{stem}かろう / {adj_i}でしょう"
     r['样态（样态形 / 礼貌样态）'] = f"{stem}そうだ / {stem}そうです"
     r['程度过分（简体复合 / 礼貌复合）'] = f"{stem}すぎる / {stem}すぎます"
-    
+
     return r
 
 
@@ -789,6 +801,92 @@ async def search_adj_i(req: AdjISearchRequest):
 async def conjugate_adj_i_endpoint(req: AdjIConjugateRequest):
     """Generate all conjugation forms for an i-adjective."""
     result = conjugate_adj_i(req.adj_i.strip())
+    return {"conjugations": result}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ADJECTIVE NA (な形容词) CONJUGATION ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def init_adj_na_table():
+    """Create japanese_adj_na table if not exists."""
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS japanese_adj_na (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            adj_na     TEXT NOT NULL,
+            reading    TEXT NOT NULL,
+            meaning    TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_adj_na ON japanese_adj_na(adj_na)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_adj_na_reading ON japanese_adj_na(reading)")
+    conn.commit()
+    conn.close()
+
+
+init_adj_na_table()
+
+
+def conjugate_adj_na(adj_na: str) -> dict:
+    """
+    Generate all conjugation forms for Na-adjectives based on Excel rules.
+    """
+    r = {}
+    stem = adj_na
+
+    # 14 basic forms from Excel
+    r['现在式肯定（终止形 / 礼貌形）'] = f"{stem}だ / {stem}です"
+    r['现在式否定 1（否定形 1 / 礼貌否定 1）'] = f"{stem}ではない / {stem}ではありません"
+    r['现在式否定 2（否定形 2 / 礼貌否定 2）'] = f"{stem}じゃない / {stem}じゃないです"
+    r['过去式肯定（过去形 / 礼貌过去形）'] = f"{stem}だった / {stem}でした"
+    r['过去式否定 1（过去否定 1 / 礼貌过去否定 1）'] = f"{stem}ではなかった / {stem}ではありませんでした"
+    r['过去式否定 2（过去否定 2 / 礼貌过去否定 2）'] = f"{stem}じゃなかった / {stem}じゃなかったです"
+    r['副词化（连用形）'] = stem + 'に'
+    r['名词化 1（程度名词）'] = stem + 'さ'
+    r['名词化 2（属性名词）'] = stem + 'み'
+    r['并列/中顿（で形）'] = stem + 'で'
+    r['假定形（条件形）'] = f"{stem}なら（ば）"
+    r['推量形（推测形 / 礼貌推测）'] = f"{stem}だろう / {stem}でしょう"
+    r['样态（样态形 / 礼貌样态）'] = f"{stem}そうだ / {stem}そうです"
+    r['程度过分（简体复合 / 礼貌复合）'] = f"{stem}すぎる / {stem}すぎます"
+
+    return r
+
+
+class AdjNaSearchRequest(BaseModel):
+    adj_na: str
+
+
+class AdjNaConjugateRequest(BaseModel):
+    adj_na: str
+
+
+@app.post("/api/adjectives-na/search")
+async def search_adj_na(req: AdjNaSearchRequest):
+    """Search japanese_adj_na table for a Na-adjective."""
+    q = req.adj_na.strip()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT adj_na, reading, meaning FROM japanese_adj_na WHERE adj_na=? OR reading=? LIMIT 1",
+        (q, q)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return {"found": False}
+    return {
+        "found": True,
+        "adj_na_info": {"adj_na": row[0], "reading": row[1], "meaning": row[2]}
+    }
+
+
+@app.post("/api/adjectives-na/conjugate")
+async def conjugate_adj_na_endpoint(req: AdjNaConjugateRequest):
+    """Generate all conjugation forms for a Na-adjective."""
+    result = conjugate_adj_na(req.adj_na.strip())
     return {"conjugations": result}
 
 
