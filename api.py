@@ -8,6 +8,7 @@ from starlette.staticfiles import StaticFiles
 from transcribe import Transcriber
 from pathlib import Path
 import sqlite3
+from config import BASE_URL
 import shutil
 
 app = FastAPI(title="Japanese Transcription API", version="1.0.0")
@@ -272,7 +273,7 @@ async def load_specific_content(book: str, course: str, filename: str):
         url_sub_path = db_path[len("resources/"):] if db_path.startswith("resources/") else db_path
 
         # 返回原始的中文字符串路径，前端 fetch 时浏览器会自动处理编码
-        mp3_url = f"http://localhost:8000/resources/{url_sub_path}"
+        mp3_url = f"{BASE_URL}/resources/{url_sub_path}"
 
         # --- 读取 JSON 字幕数据 ---
         json_data = []
@@ -891,4 +892,5 @@ async def conjugate_adj_na_endpoint(req: AdjNaConjugateRequest):
 
 
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    from config import HOST, PORT
+    uvicorn.run("api:app", host=HOST, port=PORT, reload=True)
