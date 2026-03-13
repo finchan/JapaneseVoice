@@ -2,13 +2,22 @@
 # TEST: Local development
 # PRODUCTION: Production server
 
-ENV = "PROD"  # Change to "PRODUCTION" for production deployment
-SERVER_IP = "118.25.106.35"
+ENV = "TEST"  # TEST/PROD_DM/PROD_IP
+SERVER_DOMAIN = "tasche.top"
+SERVERIP = "118.25.106.35"
+
 if ENV == "TEST":
     HOST = "0.0.0.0"
     PORT = 8000
     BASE_URL = f"http://localhost:{PORT}"
-else:
+    COMPUTE_TYPE = "int16"
+elif ENV == 'PROD_DM': #PRODUCT DOMAIN
     HOST = "0.0.0.0"
     PORT = 8000
-    BASE_URL = f"http://{SERVER_IP}:{PORT}"  # Replace with actual domain for production
+    BASE_URL = f"https://{SERVER_DOMAIN}:{PORT}"  
+    COMPUTE_TYPE = "int8"
+else: #PROD - IP
+    HOST = "0.0.0.0"
+    PORT = 8000
+    BASE_URL = f"http://{SERVERIP}:{PORT}" 
+    COMPUTE_TYPE = "int8"

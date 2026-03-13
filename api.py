@@ -8,19 +8,12 @@ from starlette.staticfiles import StaticFiles
 from transcribe import Transcriber
 from pathlib import Path
 import sqlite3
-from config import BASE_URL
+from config import BASE_URL, ENV
 import shutil
+import traceback
+import sys
 
 app = FastAPI(title="Japanese Transcription API", version="1.0.0")
-# 【第一处：路径检查打印】
-# 放在这里，每次运行后台，控制台第一行就会告诉你它在哪个目录下找资源
-print("=" * 50)
-print(f"当前 Python 运行的工作目录 (CWD): {os.getcwd()}")
-print(f"FastAPI 尝试挂载的资源绝对路径: {Path('resources').resolve()}")
-print("=" * 50)
-
-# 【第二处：挂载静态目录】
-# 确保 directory="resources" 对应的文件夹就在上面打印出的路径里
 app.mount("/resources", StaticFiles(directory="resources"), name="resources")
 
 app.add_middleware(
@@ -93,18 +86,38 @@ async def handle_transcription(
             data = Transcriber.load_data(str(json_path))
             return JSONResponse(content={"data": data})
 
+        print("文件上传成功准备调用transcriber.transcribe方法")
+
         # 5. 写入文件到对应角色的存储目录
         with open(audio_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
 
         # 6. 调用转写逻辑，并将结果存入对应角色的数据目录
+        print("开始调用transcriber.transcribe方法")
         raw_data = transcriber.transcribe(str(audio_path), str(json_path))
 
+        print("完成transcriber.transcribe方法")
         serializable_data = python_json.loads(python_json.dumps(raw_data, ensure_ascii=False))
         return JSONResponse(content={"data": serializable_data})
 
     except Exception as e:
+        # ========== 核心修改：全方位打印异常信息 ==========
+        print("\n" + "="*50 + " 异常详情 " + "="*50)
+        # 1. 基础异常信息（原 str(e)）
+        print(f"【异常描述】: {str(e)}")
+        # 2. 异常类型（比如 FileNotFoundError/ImportError 等）
+        print(f"【异常类型】: {type(e).__name__}")
+        # 3. 异常完整栈（定位到具体哪一行代码报错）
+        print(f"【完整异常栈】: ")
+        traceback.print_exc(file=sys.stdout)  # 输出到终端（而非仅日志）
+        # 4. 异常附加信息（部分异常有 args/errno 等）
+        print(f"【异常参数】: {e.args}")
+        if hasattr(e, "errno"):
+            print(f"【错误码】: {e.errno}")
+        if hasattr(e, "filename"):
+            print(f"【关联文件】: {e.filename}")
+        print("="*108 + "\n")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
@@ -891,6 +904,20 @@ async def conjugate_adj_na_endpoint(req: AdjNaConjugateRequest):
     return {"conjugations": result}
 
 
-if __name__ == "__main__":
-    from config import HOST, PORT
-    uvicorn.run("api:app", host=HOST, port=PORT, reload=True)
+from config import HOST, PORT
+if ENV == 'TEST':
+    if __name__ == "__main__":
+        uvicorn.run("api:app", host=HOST, port=PORT, reload=True)
+elif ENV == 'PROD_DM':
+    if __name__ == "__main__":
+        uvicorn.run(
+        "api:app",
+        host=HOST,
+        port=PORT,
+        reload=True,
+        ssl_certfile="/opt/japanese-voice/cert/tasche.top_bundle.pem",
+        ssl_keyfile="/opt/japanese-voice/cert/tasche.top.key"
+    )
+else: #PROD_IP
+    if __name__ == "__main__":
+        uvicorn.run("api:app", host=HOST, port=PORT, reload=True)

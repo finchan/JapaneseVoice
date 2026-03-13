@@ -6,13 +6,14 @@ from faster_whisper import WhisperModel
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from config import COMPUTE_TYPE
 
 class Transcriber:
     def __init__(
         self,
         model_size: str = "medium",
         device: str = "cpu",
-        compute_type: str = "int16",
+        compute_type: str = COMPUTE_TYPE,
         language: str = "ja",
         beam_size: int = 5,
     ):
