@@ -1,6 +1,7 @@
 """
 Japanese Speech Transcription Module (Standard Version)
 """
+import os
 
 from faster_whisper import WhisperModel
 import json
@@ -11,7 +12,7 @@ from config import COMPUTE_TYPE
 class Transcriber:
     def __init__(
         self,
-        model_size: str = "medium",
+        model_size: str = "large-v3-turbo",
         device: str = "cpu",
         compute_type: str = COMPUTE_TYPE,
         language: str = "ja",
@@ -27,10 +28,28 @@ class Transcriber:
     @property
     def model(self) -> WhisperModel:
         if self._model is None:
+            # 1. 自动识别用户根目录 (Windows: C:\Users\Admin, Linux: /home/user)
+            user_home = os.path.expanduser("~")
+
+            # 2. 匹配你下载的文件夹名称
+            local_folder_name = "faster-whisper-large-v3-turbo-ct2"
+
+            # 3. 构造本地路径：~/.cache/huggingface/hub/faster-whisper-large-v3-turbo-ct2
+            local_path = os.path.join(user_home, ".cache", "huggingface", "hub", local_folder_name)
+
+            # 4. 强制指向本地，如果不存在则回退名称（但因为服务器断网，找不到路径会报错而不是下载）
+            target = local_path if os.path.exists(local_path) else self.model_size
+
+            if os.path.exists(local_path):
+                print(f"--- 离线模式：已锁定本地路径 {local_path} ---")
+
+            # 5. 针对 2 核 CPU 优化
             self._model = WhisperModel(
-                self.model_size,
+                target,
                 device=self.device,
                 compute_type=self.compute_type,
+                cpu_threads=1,  # 修改为 1，确保不会占满 2 核 CPU，留出资源给系统
+                num_workers=1
             )
         return self._model
 

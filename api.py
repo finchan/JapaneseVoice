@@ -23,7 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-transcriber = Transcriber(model_size="medium")
+transcriber = Transcriber(model_size="large-v3-turbo")
 
 UPLOAD_DIR = Path("uploads")
 DATA_DIR = Path("data_cache")
@@ -261,6 +261,7 @@ async def get_files_list(book: str, course: str):
 
 @app.get("/api/sources/load_content")
 async def load_specific_content(book: str, course: str, filename: str):
+    print(f"DEBUG: Current ENV is {ENV}, BASE_URL is {BASE_URL}")
     """获取 MP3 URL 及其对应的 JSON 字幕内容（简化版）"""
     try:
         conn = sqlite3.connect("db/jvdb.sqlite")
